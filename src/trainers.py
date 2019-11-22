@@ -271,10 +271,10 @@ class Trainer(object):
                                          sample_fake_image_batch, sample_fake_video_batch,
                                          opt_generator)
 
-            logs['l_gen'] += l_gen.data[0]
+            logs['l_gen'] += l_gen.item()
 
-            logs['l_image_dis'] += l_image_dis.data[0]
-            logs['l_video_dis'] += l_video_dis.data[0]
+            logs['l_image_dis'] += l_image_dis.item()
+            logs['l_video_dis'] += l_video_dis.item()
 
             batch_num += 1
 
