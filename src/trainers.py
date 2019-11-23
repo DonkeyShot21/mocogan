@@ -185,10 +185,20 @@ class Trainer(object):
 
     def train_generator(self,
                         image_discriminator, video_discriminator,
+                        content_encoder, motion_encoder,
                         sample_fake_images, sample_fake_videos,
                         opt):
 
         opt.zero_grad()
+
+        # train encoder on images
+
+        real_batch = sample_real_image_batch()
+
+        latent_content = content_encoder(real_batch)
+        latent_motion = motion_encoder(real_batch)
+
+        # here forward to the generator and reconstruction loss (no GRU involved)
 
         # train on images
 
@@ -215,7 +225,7 @@ class Trainer(object):
 
         return l_generator
 
-    def train(self, generator, image_discriminator, video_discriminator):
+    def train(self, generator, image_discriminator, video_discriminator, content_encoder, motion_encoder):
         if self.use_cuda:
             generator.cuda()
             image_discriminator.cuda()
@@ -224,7 +234,8 @@ class Trainer(object):
         logger = Logger(self.log_folder)
 
         # create optimizers
-        opt_generator = optim.Adam(generator.parameters(), lr=0.0002, betas=(0.5, 0.999), weight_decay=0.00001)
+        opt_generator = optim.Adam(list(generator.parameters()) + list(content_encoder) + list(motion_encoder), 
+                                   lr=0.0002, betas=(0.5, 0.999), weight_decay=0.00001)
         opt_image_discriminator = optim.Adam(image_discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999),
                                              weight_decay=0.00001)
         opt_video_discriminator = optim.Adam(video_discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999),
@@ -267,7 +278,7 @@ class Trainer(object):
                                                    self.video_batch_size, use_categories=self.use_categories)
 
             # train generator
-            l_gen = self.train_generator(image_discriminator, video_discriminator,
+            l_gen = self.train_generator(image_discriminator, video_discriminator, content_encoder, motion_encoder,
                                          sample_fake_image_batch, sample_fake_video_batch,
                                          opt_generator)
 

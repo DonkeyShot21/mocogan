@@ -117,6 +117,10 @@ if __name__ == "__main__":
                                               n_channels=n_channels, use_noise=args['--use_noise'],
                                               noise_sigma=float(args['--noise_sigma']))
 
+    content_encoder = models.MoCoEncoder(n_channels)
+
+    motion_encoder = models.MoCoEncoder(n_channels)
+
     if torch.cuda.is_available():
         generator.cuda()
         image_discriminator.cuda()
@@ -130,4 +134,4 @@ if __name__ == "__main__":
                       use_infogan=args['--use_infogan'],
                       use_categories=args['--use_categories'])
 
-    trainer.train(generator, image_discriminator, video_discriminator)
+    trainer.train(generator, image_discriminator, video_discriminator, content_encoder, motion_encoder)
