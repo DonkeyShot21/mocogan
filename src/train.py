@@ -60,10 +60,6 @@ import data
 
 def build_discriminator(type, **kwargs):
     discriminator_type = getattr(models, type)
-
-    if 'Categorical' not in type and 'dim_categorical' in kwargs:
-        kwargs.pop('dim_categorical')
-
     return discriminator_type(**kwargs)
 
 
@@ -99,7 +95,6 @@ if __name__ == "__main__":
 
     dim_z_content = int(args['--dim_z_content'])
     dim_z_motion = int(args['--dim_z_motion'])
-    dim_z_category = int(args['--dim_z_category'])
 
     dataset = data.VideoFolderDataset(args['<dataset>'], cache=os.path.join(args['<dataset>'], 'local.db'))
     image_dataset = data.ImageDataset(dataset, image_transforms)
@@ -108,30 +103,32 @@ if __name__ == "__main__":
     video_dataset = data.VideoDataset(dataset, 16, 2, video_transforms)
     video_loader = DataLoader(video_dataset, batch_size=video_batch, drop_last=True, num_workers=2, shuffle=True)
 
-    generator = models.VideoGenerator(n_channels, dim_z_content, dim_z_category, dim_z_motion, video_length)
+    generator = models.VideoGenerator(n_channels, dim_z_content, dim_z_motion, video_length)
 
     image_discriminator = build_discriminator(args['--image_discriminator'], n_channels=n_channels,
                                               use_noise=args['--use_noise'], noise_sigma=float(args['--noise_sigma']))
 
-    video_discriminator = build_discriminator(args['--video_discriminator'], dim_categorical=dim_z_category,
+    video_discriminator = build_discriminator(args['--video_discriminator'],
                                               n_channels=n_channels, use_noise=args['--use_noise'],
                                               noise_sigma=float(args['--noise_sigma']))
 
-    content_encoder = models.MoCoEncoder(n_channels)
+    content_encoder = models.MoCoEncoder(n_channels, dim_z_content)
 
-    motion_encoder = models.MoCoEncoder(n_channels)
+    motion_encoder = models.MoCoEncoder(n_channels, dim_z_motion)
 
     if torch.cuda.is_available():
         generator.cuda()
         image_discriminator.cuda()
         video_discriminator.cuda()
+        content_encoder.cuda()
+        motion_encoder.cuda()
+
 
     trainer = Trainer(image_loader, video_loader,
                       int(args['--print_every']),
                       int(args['--batches']),
                       args['<log_folder>'],
                       use_cuda=torch.cuda.is_available(),
-                      use_infogan=args['--use_infogan'],
-                      use_categories=args['--use_categories'])
+                      use_infogan=args['--use_infogan'])
 
     trainer.train(generator, image_discriminator, video_discriminator, content_encoder, motion_encoder)

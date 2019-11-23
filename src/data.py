@@ -77,7 +77,8 @@ class ImageDataset(torch.utils.data.Dataset):
         if frame.shape[0] == 0:
             print "video {}. From {} to {}. num {}".format(video.shape, i_from, i_to, item)
 
-        return {"images": self.transforms(frame), "categories": target}
+        # return {"images": self.transforms(frame), "categories": target}
+        return self.transforms(frame)
 
     def __len__(self):
         return self.dataset.cumsum[-1]
@@ -112,7 +113,8 @@ class VideoDataset(torch.utils.data.Dataset):
         frames = np.split(video, video_len, axis=1 if horizontal else 0)
         selected = np.array([frames[s_id] for s_id in subsequence_idx])
 
-        return {"images": self.transforms(selected), "categories": target}
+        # return {"images": self.transforms(selected), "categories": target}
+        return self.transforms(selected)
 
     def __len__(self):
         return len(self.dataset)

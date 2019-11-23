@@ -60,7 +60,7 @@ class ImageDiscriminator(nn.Module):
 
     def forward(self, input):
         h = self.main(input).squeeze()
-        return h, None
+        return h
 
 
 class PatchImageDiscriminator(nn.Module):
@@ -90,7 +90,7 @@ class PatchImageDiscriminator(nn.Module):
 
     def forward(self, input):
         h = self.main(input).squeeze()
-        return h, None
+        return h
 
 
 class PatchVideoDiscriminator(nn.Module):
@@ -123,7 +123,7 @@ class PatchVideoDiscriminator(nn.Module):
     def forward(self, input):
         h = self.main(input).squeeze()
 
-        return h, None
+        return h
 
 
 class VideoDiscriminator(nn.Module):
@@ -161,25 +161,25 @@ class VideoDiscriminator(nn.Module):
     def forward(self, input):
         h = self.main(input).squeeze()
 
-        return h, None
+        return h
 
 
-class CategoricalVideoDiscriminator(VideoDiscriminator):
-    def __init__(self, n_channels, dim_categorical, n_output_neurons=1, use_noise=False, noise_sigma=None):
-        super(CategoricalVideoDiscriminator, self).__init__(n_channels=n_channels,
-                                                            n_output_neurons=n_output_neurons + dim_categorical,
-                                                            use_noise=use_noise,
-                                                            noise_sigma=noise_sigma)
+# class CategoricalVideoDiscriminator(VideoDiscriminator):
+#     def __init__(self, n_channels, dim_categorical, n_output_neurons=1, use_noise=False, noise_sigma=None):
+#         super(CategoricalVideoDiscriminator, self).__init__(n_channels=n_channels,
+#                                                             n_output_neurons=n_output_neurons + dim_categorical,
+#                                                             use_noise=use_noise,
+#                                                             noise_sigma=noise_sigma)
 
-        self.dim_categorical = dim_categorical
+#         self.dim_categorical = dim_categorical
 
-    def split(self, input):
-        return input[:, :input.size(1) - self.dim_categorical], input[:, input.size(1) - self.dim_categorical:]
+#     def split(self, input):
+#         return input[:, :input.size(1) - self.dim_categorical], input[:, input.size(1) - self.dim_categorical:]
 
-    def forward(self, input):
-        h, _ = super(CategoricalVideoDiscriminator, self).forward(input)
-        labels, categ = self.split(h)
-        return labels, categ
+#     def forward(self, input):
+#         h, _ = super(CategoricalVideoDiscriminator, self).forward(input)
+#         labels, categ = self.split(h)
+#         return labels, categ
 
 
 class VideoGenerator(nn.Module):
@@ -194,7 +194,7 @@ class VideoGenerator(nn.Module):
 
         dim_z = dim_z_motion + dim_z_content
 
-        self.recurrent = nn.GRUCell(dim_z_motion, dim_z_motion)
+        self.motion_dreamer = MotionDreamer(dim_z_motion)
 
         self.main = nn.Sequential(
             nn.ConvTranspose2d(dim_z, ngf * 8, 4, 1, 0, bias=False),
@@ -213,78 +213,16 @@ class VideoGenerator(nn.Module):
             nn.Tanh()
         )
 
-    # def sample_z_m(self, num_samples, video_len=None):
-    #     video_len = video_len if video_len is not None else self.video_length
+    def generate_videos(self, latent_content, latent_motion, video_len=None):
+        motion_dreamer_gt = latent_motion[:,:-1,:]
+        
 
-    #     h_t = [self.get_gru_initial_state(num_samples)]
 
-    #     for frame_num in range(video_len):
-    #         e_t = self.get_iteration_noise(num_samples)
-    #         h_t.append(self.recurrent(e_t, h_t[-1]))
+        
 
-    #     z_m_t = [h_k.view(-1, 1, self.dim_z_motion) for h_k in h_t]
-    #     z_m = torch.cat(z_m_t[1:], dim=1).view(-1, self.dim_z_motion)
 
-    #     return z_m
-# 
-    # def sample_z_categ(self, num_samples, video_len):
-    #     video_len = video_len if video_len is not None else self.video_length
-
-    #     if self.dim_z_category <= 0:
-    #         return None, np.zeros(num_samples)
-
-    #     classes_to_generate = np.random.randint(self.dim_z_category, size=num_samples)
-    #     one_hot = np.zeros((num_samples, self.dim_z_category), dtype=np.float32)
-    #     one_hot[np.arange(num_samples), classes_to_generate] = 1
-    #     one_hot_video = np.repeat(one_hot, video_len, axis=0)
-
-    #     one_hot_video = torch.from_numpy(one_hot_video)
-
-    #     if torch.cuda.is_available():
-    #         one_hot_video = one_hot_video.cuda()
-
-    #     return Variable(one_hot_video), classes_to_generate
-
-    # def sample_z_content(self, num_samples, video_len=None):
-    #     video_len = video_len if video_len is not None else self.video_length
-
-    #     content = np.random.normal(0, 1, (num_samples, self.dim_z_content)).astype(np.float32)
-    #     content = np.repeat(content, video_len, axis=0)
-    #     content = torch.from_numpy(content)
-    #     if torch.cuda.is_available():
-    #         content = content.cuda()
-    #     return Variable(content)
-
-    # def sample_z_video(self, num_samples, video_len=None):
-    #     z_content = self.sample_z_content(num_samples, video_len)
-    #     z_category, z_category_labels = self.sample_z_categ(num_samples, video_len)
-    #     z_motion = self.sample_z_m(num_samples, video_len)
-
-    #     if z_category is not None:
-    #         z = torch.cat([z_content, z_category, z_motion], dim=1)
-    #     else:
-    #         z = torch.cat([z_content, z_motion], dim=1)
-
-    #     return z, z_category_labels
-
-    def generate_videos(self, num_samples, content_seed, motion_seed, video_len=None):
-        # video_len = video_len if video_len is not None else self.video_length
-
-        # z, z_category_labels = self.sample_z_video(num_samples, video_len)
-
-        # h = self.main(z.view(z.size(0), z.size(1), 1, 1))
-        # h = h.view(h.size(0) / video_len, video_len, self.n_channels, h.size(3), h.size(3))
-
-        # z_category_labels = torch.from_numpy(z_category_labels)
-
-        # if torch.cuda.is_available():
-        #     z_category_labels = z_category_labels.cuda()
-
-        # h = h.permute(0, 2, 1, 3, 4)
-        # return h, Variable(z_category_labels, requires_grad=False)
-
-    def generate_images(self, content_seed, motion_seed):
-        z = torch.cat((content_seed, motion_seed), -1)
+    def generate_images(self, latent_content, latent_motion):
+        z = torch.cat((latent_content, latent_motion), 1)
         return self.main(z)
 
     # def get_gru_initial_state(self, num_samples):
@@ -295,7 +233,7 @@ class VideoGenerator(nn.Module):
 
 
 class MoCoEncoder(nn.Module):
-    def __init__(self, n_channels, ndf=64, use_noise=False, noise_sigma=None):
+    def __init__(self, n_channels, moco_dims, ndf=64, use_noise=False, noise_sigma=None):
         super(MoCoEncoder, self).__init__()
 
         self.main = nn.Sequential(
@@ -317,21 +255,31 @@ class MoCoEncoder(nn.Module):
             nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ndf * 8),
             nn.LeakyReLU(0.2, inplace=True),
+
+            nn.Conv2d(ndf * 8, moco_dims, 4, 1, 0, bias=False)
+            
+
         )
 
     def forward(self, input):
-        h = self.main(input).squeeze()
-        print(h.size())
-        return h, None
+        return self.main(input)
 
 class MotionDreamer(nn.Module):
     def __init__(self, motion_dim):
-        self.gru = torch.GRU(motion_dim)
+        self.gru = nn.GRU(motion_dim)
 
     def forward(self, motion_latent_seq, hidden=None):
         return self.gru(input_seq, hidden)
 
 
 
-
-
+# python train.py  \
+#     --image_batch 3 \
+#     --video_batch 2 \
+#     --use_noise \
+#     --noise_sigma 0.1 \
+#     --image_discriminator PatchImageDiscriminator \
+#     --video_discriminator CategoricalVideoDiscriminator \
+#     --print_every 1 \
+#     --every_nth 2 \
+#     ../data/actions ../logs/actions
