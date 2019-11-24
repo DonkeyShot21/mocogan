@@ -193,13 +193,27 @@ class VideoGenerator(nn.Module):
             nn.Tanh()
         )
 
-    def generate_videos(self, latent_content, latent_motion, video_len=None, autoregressive=False):
+    def generate_videos(self, latent_content, latent_motion, video_len=16, autoregressive=False):
 
         #  check if training or testing
         if autoregressive: # test
-            # assert len(latent_content.size()) == len(latent_motion.size()), \
-            #        "content and motion should have roughly the same size"
-            pass
+            
+            # predict next latent motion
+            generated_frames = []
+            predicted_latent_motion, hidden = self.motion_dreamer(latent_motion.squeeze().unsqueeze(1), None)
+            for frame_idx in range(video_len):
+                
+                latent_moco = torch.cat((latent_content.squeeze(), predicted_latent_motion.squeeze()), 1)
+
+                # generate frames from latent motion and content
+                generated_frames.append(self.main(latent_moco.unsqueeze(-1).unsqueeze(-1)).unsqueeze(1))
+
+                predicted_latent_motion, hidden = self.motion_dreamer(predicted_latent_motion.squeeze().unsqueeze(1), hidden)
+            
+            # recover videos
+            generated_videos = torch.cat(generated_frames, 1)
+            return generated_videos
+
 
         else: # train
 
@@ -208,7 +222,7 @@ class VideoGenerator(nn.Module):
 
             # build input for the CNN
             n_frames = predicted_latent_motion.size(1)
-            latent_content = latent_content.unsqueeze(1).repeat(1, n_frames, 1)
+            latent_content = latent_content.unsqueeze(1).repeat(1, n_frames, 1) 
             latent_moco = torch.cat((latent_content, predicted_latent_motion), -1)
             latent_moco = torch.cat(latent_moco.split(1,0), 1).squeeze(0).unsqueeze(-1).unsqueeze(-1)
 

@@ -12,6 +12,7 @@ from logger import Logger
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 from torch.autograd import Variable
 import torch.optim as optim
@@ -223,7 +224,6 @@ class Trainer(object):
         opt_generator.zero_grad()
 
         # compute video generator losses
-        # TODO: add reconstruction loss
         generated_image_labels = image_discriminator(generated_image_batch)
         generated_video_labels = video_discriminator(generated_video_batch)
 
@@ -232,19 +232,22 @@ class Trainer(object):
         ones_video = self.ones_like(generated_video_labels)
         
         # compute generator loss
+        # TODO: try reduction 'sum'
         l_generator = self.gan_criterion(generated_image_labels, ones_image) + \
                       self.gan_criterion(generated_video_labels, ones_video)
-
+        
+        l_reconstruction = 0.5 * F.l1_loss(generated_video_batch, real_video_batch[:,:,1:,:]) + \
+                           0.5 * F.l1_loss(generated_image_batch, real_image_batch)
+        l_generator += l_reconstruction
+        
         # update generator
         l_generator.backward()
         opt_generator.step()
 
-        return l_image_discriminator, l_video_discriminator, l_generator
+        return l_image_discriminator, l_video_discriminator, l_generator, l_reconstruction
 
     def train(self, generator, image_discriminator, video_discriminator, content_encoder, motion_encoder):
         if self.use_cuda:
-            generator.cuda()
-            image_discriminator.cuda()
             video_discriminator.cuda()
 
         logger = Logger(self.log_folder)
@@ -272,18 +275,22 @@ class Trainer(object):
             generator.train()
             image_discriminator.train()
             video_discriminator.train()
+            motion_encoder.train()
+            content_encoder.train()
 
             opt_generator.zero_grad()
 
             opt_video_discriminator.zero_grad()
 
-            l_image, l_video, l_gen = self.train_adversarial(generator, image_discriminator, video_discriminator, 
-                                           content_encoder, motion_encoder,
-                                           opt_image_discriminator, opt_video_discriminator, opt_generator)
+            (l_image, l_video, 
+             l_gen, l_recon) = self.train_adversarial(generator, image_discriminator, video_discriminator, 
+                                                      content_encoder, motion_encoder,
+                                                      opt_image_discriminator, opt_video_discriminator, opt_generator)
 
             logs['l_gen'] += l_gen.item()
             logs['l_image_dis'] += l_image.item()
             logs['l_video_dis'] += l_video.item()
+            logs['l_recon'] += l_recon.item()
 
             batch_num += 1
 
@@ -304,13 +311,25 @@ class Trainer(object):
                 start_time = time.time()
 
                 generator.eval()
+                motion_encoder.eval()
+                content_encoder.eval()
 
-                images, _ = sample_fake_image_batch(self.image_batch_size)
+                # images
+
+                real_image_batch = self.sample_real_image_batch()
+                latent_content = content_encoder(real_image_batch)
+                latent_motion = motion_encoder(real_image_batch)
+                images = generator.generate_images(latent_content, latent_motion)
                 logger.image_summary("Images", images_to_numpy(images), batch_num)
+                
+                # video
 
-                videos, _ = sample_fake_video_batch(self.video_batch_size)
-                logger.video_summary("Videos", videos_to_numpy(videos), batch_num)
-
+                real_video_batch = self.sample_real_video_batch()
+                real_video_batch_perm = real_video_batch.permute(0, 2, 1, 3, 4)
+                latent_content = content_encoder(real_video_batch_perm[:,0,:])
+                latent_motion = motion_encoder(real_video_batch_perm[:,0,:])
+                videos = generator.generate_videos(latent_content, latent_motion, autoregressive=True)
+                logger.video_summary("Videos", videos_to_numpy(videos.permute(0,2,1,3,4)), batch_num)
                 torch.save(generator, os.path.join(self.log_folder, 'generator_%05d.pytorch' % batch_num))
 
             if batch_num >= self.train_batches:
