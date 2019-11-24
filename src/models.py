@@ -274,9 +274,8 @@ class MotionDreamer(nn.Module):
 
         self.hidden_dim = hidden_dim if hidden_dim is not None else 128
         self.motion_dim = motion_dim
-
-        self.fc = nn.Linear(hidden_dim, motion_dim)
-        self.gru = nn.GRU(motion_dim, hidden_dim, n_layers,
+        self.fc = nn.Linear(self.hidden_dim, motion_dim)
+        self.gru = nn.GRU(motion_dim, self.hidden_dim, n_layers,
                           batch_first=True, dropout=drop_prob)
 
     def forward(self, motion_latent_seq, hidden=None):
@@ -291,7 +290,7 @@ class MotionDreamer(nn.Module):
             return self.fc(gru_actv), hidden
     
     def init_hidden(self):
-        return torch.zeros(1, 1, self.hidden_size).cuda()
+        return torch.zeros(1, 1, self.hidden_dim).cuda()
 
 
 
