@@ -137,19 +137,16 @@ class Trainer(object):
                           content_encoder, motion_encoder, 
                           opt_generator, opt_image_discriminator, opt_video_discriminator):
 
-        opt_generator.zero_grad()
-        opt_image_discriminator.zero_grad()
-        opt_video_discriminator.zero_grad()
 
         ########################################################
         # train encoder, generator and discriminator on images #
         ########################################################
 
+        # reset grads on image discriminator and generator
+        opt_image_discriminator.zero_grad()
+
         # load image data
         real_image_batch = self.sample_real_image_batch()
-
-        # get discriminator real labels
-        real_image_labels = image_discriminator(real_image_batch)
 
         # extract latent content and motion
         latent_content = content_encoder(real_image_batch)
@@ -158,32 +155,32 @@ class Trainer(object):
         # generate from latent content and motion
         generated_image_batch = generator.generate_images(latent_content, latent_motion)
 
-        # get discriminator generated labels
-        generated_image_labels = image_discriminator(generated_image_batch)
+        # get discriminator real / generated image labels
+        real_image_labels = image_discriminator(real_image_batch)
+        generated_image_labels = image_discriminator(generated_image_batch.detach())
 
-        # construct labels
-        ones = self.ones_like(real_image_labels)
-        zeros = self.zeros_like(generated_image_labels)
+        # build discriminator ground truth
+        ones_image = self.ones_like(real_image_labels)
+        zeros_image = self.zeros_like(generated_image_labels)
 
-        # compute image losses 
-        l_generator = self.gan_criterion(generated_image_labels, ones)
-        # TODO: add reconstruction loss
-        l_discriminator_image = self.gan_criterion(real_image_labels, ones) + \
-                                self.gan_criterion(generated_image_labels, zeros)
+        # compute image discriminator loss
+        l_image_discriminator = self.gan_criterion(real_image_labels, ones_image) + \
+                                self.gan_criterion(generated_image_labels, zeros_image)
         
         # update discriminator, generator will be updated later
-        l_discriminator_image.backward()
+        l_image_discriminator.backward()
         opt_image_discriminator.step()
 
 
-        ########################################################
-        # train encoder, generator and discriminator on videos #
-        ########################################################
+        ####################################
+        # training discriminator on videos #
+        ####################################
+        
+        # reset grads on video discriminator
+        opt_video_discriminator.zero_grad()
 
         # load video data
         real_video_batch = self.sample_real_video_batch()
-
-        real_video_labels = video_discriminator(real_video_batch)
         
         # reshape and cat tensors to eval latents
         n_frames = real_video_batch.size(2)
@@ -195,23 +192,54 @@ class Trainer(object):
         latent_motion = motion_encoder(real_video_batch_cat)
 
         # recover previous order
-        latent_content = torch.stack(latent_content.split(n_frames, 0))
+        latent_content = torch.stack(latent_content.split(n_frames, 0)).squeeze()
         latent_motion = torch.stack(latent_motion.split(n_frames, 0)).squeeze()
 
-        print(latent_motion.size())
-        # unroll recurrent neural network for motion
-        generated_video_batch = generator.generate_videos(latent_content, latent_motion)
+        # prepare ground truth and input for video generator
+        latent_motion_gt = latent_motion[:,1:,:] # ground truth is the shifted input
+        latent_motion = latent_motion[:,:-1,:]
 
+        # generate video
+        generated_video_batch, predicted_motion_content = generator.generate_videos(latent_content, latent_motion)
+        generated_video_batch = generated_video_batch.permute(0,2,1,3,4)
 
-        fake_labels, fake_categorical = video_discriminator(fake_batch)
-        all_ones = self.ones_like(fake_labels)
+        # get discriminator real and generated video labels
+        real_video_labels = video_discriminator(real_video_batch[:,:,1:,:])
+        generated_video_labels = video_discriminator(generated_video_batch.detach())
+        
+        # build discriminator ground truth
+        ones_video = self.ones_like(real_video_labels)
+        zeros_video = self.zeros_like(generated_video_labels)
 
-        l_generator += self.gan_criterion(fake_labels, all_ones)
+        # compute video discriminator loss
+        l_video_discriminator = self.gan_criterion(real_video_labels, ones_video) + \
+                                self.gan_criterion(generated_video_labels, zeros_video)
 
+        # update video discriminator
+        l_video_discriminator.backward()
+        opt_video_discriminator.step()
+
+        # reset gradients on generator
+        opt_generator.zero_grad()
+
+        # compute video generator losses
+        # TODO: add reconstruction loss
+        generated_image_labels = image_discriminator(generated_image_batch)
+        generated_video_labels = video_discriminator(generated_video_batch)
+
+        # build generator ground truth 
+        ones_image = self.ones_like(generated_image_labels)
+        ones_video = self.ones_like(generated_video_labels)
+        
+        # compute generator loss
+        l_generator = self.gan_criterion(generated_image_labels, ones_image) + \
+                      self.gan_criterion(generated_video_labels, ones_video)
+
+        # update generator
         l_generator.backward()
-        opt.step()
+        opt_generator.step()
 
-        return l_generator
+        return l_image_discriminator, l_video_discriminator, l_generator
 
     def train(self, generator, image_discriminator, video_discriminator, content_encoder, motion_encoder):
         if self.use_cuda:
@@ -249,14 +277,13 @@ class Trainer(object):
 
             opt_video_discriminator.zero_grad()
 
-            l_gen = self.train_adversarial(generator, image_discriminator, video_discriminator, 
+            l_image, l_video, l_gen = self.train_adversarial(generator, image_discriminator, video_discriminator, 
                                            content_encoder, motion_encoder,
                                            opt_image_discriminator, opt_video_discriminator, opt_generator)
 
             logs['l_gen'] += l_gen.item()
-
-            logs['l_image_dis'] += l_image_dis.item()
-            logs['l_video_dis'] += l_video_dis.item()
+            logs['l_image_dis'] += l_image.item()
+            logs['l_video_dis'] += l_video.item()
 
             batch_num += 1
 

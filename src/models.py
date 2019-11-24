@@ -121,9 +121,8 @@ class PatchVideoDiscriminator(nn.Module):
         )
 
     def forward(self, input):
-        h = self.main(input).squeeze()
-
-        return h
+        out = self.main(input).squeeze()
+        return out
 
 
 class VideoDiscriminator(nn.Module):
@@ -159,27 +158,8 @@ class VideoDiscriminator(nn.Module):
         )
 
     def forward(self, input):
-        h = self.main(input).squeeze()
-
-        return h
-
-
-# class CategoricalVideoDiscriminator(VideoDiscriminator):
-#     def __init__(self, n_channels, dim_categorical, n_output_neurons=1, use_noise=False, noise_sigma=None):
-#         super(CategoricalVideoDiscriminator, self).__init__(n_channels=n_channels,
-#                                                             n_output_neurons=n_output_neurons + dim_categorical,
-#                                                             use_noise=use_noise,
-#                                                             noise_sigma=noise_sigma)
-
-#         self.dim_categorical = dim_categorical
-
-#     def split(self, input):
-#         return input[:, :input.size(1) - self.dim_categorical], input[:, input.size(1) - self.dim_categorical:]
-
-#     def forward(self, input):
-#         h, _ = super(CategoricalVideoDiscriminator, self).forward(input)
-#         labels, categ = self.split(h)
-#         return labels, categ
+        out = self.main(input).squeeze()
+        return out
 
 
 class VideoGenerator(nn.Module):
@@ -214,26 +194,34 @@ class VideoGenerator(nn.Module):
         )
 
     def generate_videos(self, latent_content, latent_motion, video_len=None, autoregressive=False):
-        #  check if training or testing through unrolled flag
-        if not autoregressive:
 
-            motion_dreamer_gt = latent_motion[:,:-1,:]
-            print(latent_content.size())
-        
+        #  check if training or testing
+        if autoregressive: # test
+            # assert len(latent_content.size()) == len(latent_motion.size()), \
+            #        "content and motion should have roughly the same size"
+            pass
 
+        else: # train
 
-        
+            # predict next latent motion
+            predicted_latent_motion, _ = self.motion_dreamer(latent_motion)
 
+            # build input for the CNN
+            n_frames = predicted_latent_motion.size(1)
+            latent_content = latent_content.unsqueeze(1).repeat(1, n_frames, 1)
+            latent_moco = torch.cat((latent_content, predicted_latent_motion), -1)
+            latent_moco = torch.cat(latent_moco.split(1,0), 1).squeeze(0).unsqueeze(-1).unsqueeze(-1)
+
+            # generate frames from latent motion and content
+            generated_frames = self.main(latent_moco)
+
+            # recover videos
+            generated_videos = torch.stack(generated_frames.split(n_frames, 0))
+            return generated_videos, predicted_latent_motion
 
     def generate_images(self, latent_content, latent_motion):
-        z = torch.cat((latent_content, latent_motion), 1)
-        return self.main(z)
-
-    # def get_gru_initial_state(self, num_samples):
-    #     return Variable(T.FloatTensor(num_samples, self.dim_z_motion).normal_())
-
-    # def get_iteration_noise(self, num_samples):
-    #     return Variable(T.FloatTensor(num_samples, self.dim_z_motion).normal_())
+        latent_moco = torch.cat((latent_content, latent_motion), 1)
+        return self.main(latent_moco)
 
 
 class MoCoEncoder(nn.Module):
@@ -261,47 +249,34 @@ class MoCoEncoder(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
 
             nn.Conv2d(ndf * 8, moco_dims, 4, 1, 0, bias=False)
-            
-
         )
 
     def forward(self, input):
         return self.main(input)
 
+
 class MotionDreamer(nn.Module):
-    def __init__(self, motion_dim, hidden_dim=None, drop_prob=0., n_layers=2):
+    def __init__(self, motion_dim, hidden_dim=128, dropout=0.0, depth=1):
         super(MotionDreamer, self).__init__()
 
-        self.hidden_dim = hidden_dim if hidden_dim is not None else 128
-        self.motion_dim = motion_dim
-        self.fc = nn.Linear(self.hidden_dim, motion_dim)
-        self.gru = nn.GRU(motion_dim, self.hidden_dim, n_layers,
-                          batch_first=True, dropout=drop_prob)
+        self.fc = nn.Linear(hidden_dim, motion_dim)
+        self.gru = nn.GRU(motion_dim, hidden_dim, depth, batch_first=True, 
+                          dropout=dropout * float(depth > 1))
 
     def forward(self, motion_latent_seq, hidden=None):
-        if hidden is not None:
-            # if hidden already init, no probs, we use it
-            gru_actv, hidden = self.gru(motion_latent_seq, hidden)
-            return self.fc(gru_actv), hidden
-        else:
-            # if hidden None, first we init, then we use it
-            hidden = self.init_hidden()
-            gru_actv, hidden = self.gru(motion_latent_seq, hidden)
-            return self.fc(gru_actv), hidden
+        out, hidden = self.gru(motion_latent_seq, hidden)
+        return self.fc(out), hidden
     
-    def init_hidden(self):
-        return torch.zeros(1, 1, self.hidden_dim).cuda()
 
 
 
-
-# python train.py  \
-#     --image_batch 3 \
+# python src/train.py  \
+#     --image_batch 4 \
 #     --video_batch 2 \
 #     --use_noise \
 #     --noise_sigma 0.1 \
 #     --image_discriminator PatchImageDiscriminator \
-#     --video_discriminator CategoricalVideoDiscriminator \
+#     --video_discriminator PatchVideoDiscriminator \
 #     --print_every 1 \
 #     --every_nth 2 \
-#     ../data/actions ../logs/actions
+#     data/actions logs/actions
