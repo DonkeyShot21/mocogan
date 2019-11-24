@@ -213,8 +213,12 @@ class VideoGenerator(nn.Module):
             nn.Tanh()
         )
 
-    def generate_videos(self, latent_content, latent_motion, video_len=None):
-        motion_dreamer_gt = latent_motion[:,:-1,:]
+    def generate_videos(self, latent_content, latent_motion, video_len=None, unrolled=False):
+        #  check if training or testing through unrolled flag
+        if not unrolled:
+
+            motion_dreamer_gt = latent_motion[:,:-1,:]
+            print(latent_content.size())
         
 
 
@@ -266,7 +270,8 @@ class MoCoEncoder(nn.Module):
 
 class MotionDreamer(nn.Module):
     def __init__(self, motion_dim):
-        self.gru = nn.GRU(motion_dim)
+        super(MotionDreamer, self).__init__()
+        self.gru = nn.GRU(motion_dim, motion_dim)
 
     def forward(self, motion_latent_seq, hidden=None):
         return self.gru(input_seq, hidden)
