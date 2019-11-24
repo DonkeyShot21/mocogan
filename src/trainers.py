@@ -263,7 +263,7 @@ class Trainer(object):
         # training loop
 
         def init_logs():
-            return {'l_gen': 0, 'l_image_dis': 0, 'l_video_dis': 0}
+            return {'l_gen': 0, 'l_image_dis': 0, 'l_video_dis': 0, 'l_recon':0}
 
         batch_num = 0
 
@@ -282,10 +282,9 @@ class Trainer(object):
 
             opt_video_discriminator.zero_grad()
 
-            (l_image, l_video, 
-             l_gen, l_recon) = self.train_adversarial(generator, image_discriminator, video_discriminator, 
-                                                      content_encoder, motion_encoder,
-                                                      opt_image_discriminator, opt_video_discriminator, opt_generator)
+            l_image, l_video, l_gen, l_recon = self.train_adversarial(generator, image_discriminator, video_discriminator, 
+                                                                      content_encoder, motion_encoder,
+                                                                      opt_image_discriminator, opt_video_discriminator, opt_generator)
 
             logs['l_gen'] += l_gen.item()
             logs['l_image_dis'] += l_image.item()
