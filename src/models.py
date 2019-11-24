@@ -213,9 +213,9 @@ class VideoGenerator(nn.Module):
             nn.Tanh()
         )
 
-    def generate_videos(self, latent_content, latent_motion, video_len=None, unrolled=False):
+    def generate_videos(self, latent_content, latent_motion, video_len=None, autoregressive=False):
         #  check if training or testing through unrolled flag
-        if not unrolled:
+        if not autoregressive:
 
             motion_dreamer_gt = latent_motion[:,:-1,:]
             print(latent_content.size())
@@ -269,12 +269,30 @@ class MoCoEncoder(nn.Module):
         return self.main(input)
 
 class MotionDreamer(nn.Module):
-    def __init__(self, motion_dim):
+    def __init__(self, motion_dim, hidden_dim=None, drop_prob=0., n_layers=2):
         super(MotionDreamer, self).__init__()
-        self.gru = nn.GRU(motion_dim, motion_dim)
+
+        self.hidden_dim = hidden_dim if hidden_dim is not None else 128
+        self.motion_dim = motion_dim
+
+        self.fc = nn.Linear(hidden_dim, motion_dim)
+        self.gru = nn.GRU(motion_dim, hidden_dim, n_layers,
+                          batch_first=True, dropout=drop_prob)
 
     def forward(self, motion_latent_seq, hidden=None):
-        return self.gru(input_seq, hidden)
+        if hidden is not None:
+            # if hidden already init, no probs, we use it
+            gru_actv, hidden = self.gru(motion_latent_seq, hidden)
+            return self.fc(gru_actv), hidden
+        else:
+            # if hidden None, first we init, then we use it
+            hidden = self.init_hidden()
+            gru_actv, hidden = self.gru(motion_latent_seq, hidden)
+            return self.fc(gru_actv), hidden
+    
+    def init_hidden(self):
+        return torch.zeros(1, 1, self.hidden_size).cuda()
+
 
 
 
