@@ -81,7 +81,7 @@ if __name__ == "__main__":
 
     image_transforms = transforms.Compose([
         PIL.Image.fromarray,
-        transforms.Scale(int(args["--image_size"])),
+        transforms.Resize(int(args["--image_size"])),
         transforms.ToTensor(),
         lambda x: x[:n_channels, ::],
         transforms.Normalize((0.5, 0.5, .5), (0.5, 0.5, 0.5)),
