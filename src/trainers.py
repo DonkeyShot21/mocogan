@@ -201,7 +201,7 @@ class Trainer(object):
         latent_motion = latent_motion[:,:-1,:]
 
         # generate video
-        generated_video_batch, predicted_motion_content = generator.generate_videos(latent_content, latent_motion)
+        generated_video_batch, predicted_latent_motion = generator.generate_videos(latent_content, latent_motion)
         generated_video_batch = generated_video_batch.permute(0,2,1,3,4)
 
         # get discriminator real and generated video labels
@@ -235,9 +235,9 @@ class Trainer(object):
         # TODO: try reduction 'sum'
         l_generator = self.gan_criterion(generated_image_labels, ones_image) + \
                       self.gan_criterion(generated_video_labels, ones_video)
-        
         l_reconstruction = 0.5 * F.l1_loss(generated_video_batch, real_video_batch[:,:,1:,:]) + \
-                           0.5 * F.l1_loss(generated_image_batch, real_image_batch)
+                           0.5 * F.l1_loss(generated_image_batch, real_image_batch) + \
+                           0.2 * F.l1_loss(predicted_latent_motion, latent_motion_gt)
         l_generator += l_reconstruction
         
         # update generator
@@ -327,7 +327,7 @@ class Trainer(object):
                 real_video_batch_perm = real_video_batch.permute(0, 2, 1, 3, 4)
                 latent_content = content_encoder(real_video_batch_perm[:,0,:])
                 latent_motion = motion_encoder(real_video_batch_perm[:,0,:])
-                videos = generator.generate_videos(latent_content, latent_motion, autoregressive=True)
+                videos = generator.generate_videos(latent_content, latent_motion, autoregressive=True, motion_encoder=motion_encoder)
                 logger.video_summary("Videos", videos_to_numpy(videos.permute(0,2,1,3,4)), batch_num)
                 torch.save(generator, os.path.join(self.log_folder, 'generator_%05d.pytorch' % batch_num))
 

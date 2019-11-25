@@ -193,7 +193,7 @@ class VideoGenerator(nn.Module):
             nn.Tanh()
         )
 
-    def generate_videos(self, latent_content, latent_motion, video_len=16, autoregressive=False):
+    def generate_videos(self, latent_content, latent_motion, video_len=16, autoregressive=False, motion_encoder=None):
 
         #  check if training or testing
         if autoregressive: # test
@@ -203,17 +203,20 @@ class VideoGenerator(nn.Module):
             predicted_latent_motion, hidden = self.motion_dreamer(latent_motion.squeeze().unsqueeze(1), None)
             for frame_idx in range(video_len):
                 
-                latent_moco = torch.cat((latent_content.squeeze(), predicted_latent_motion.squeeze()), 1)
-
                 # generate frames from latent motion and content
-                generated_frames.append(self.main(latent_moco.unsqueeze(-1).unsqueeze(-1)).unsqueeze(1))
+                latent_moco = torch.cat((latent_content.squeeze(), predicted_latent_motion.squeeze()), 1)
+                predicted_frame = self.main(latent_moco.unsqueeze(-1).unsqueeze(-1)).unsqueeze(1)
+                generated_frames.append(predicted_frame)
 
-                predicted_latent_motion, hidden = self.motion_dreamer(predicted_latent_motion.squeeze().unsqueeze(1), hidden)
+                # feed last frame back in (autoregressive)
+                predicted_frame_cat = torch.cat(predicted_frame.split(1, 0), 1).squeeze(0)
+                autoregressive_latent_motion = motion_encoder(predicted_frame_cat)
+
+                predicted_latent_motion, hidden = self.motion_dreamer(autoregressive_latent_motion.squeeze().unsqueeze(1), hidden)
             
             # recover videos
             generated_videos = torch.cat(generated_frames, 1)
             return generated_videos
-
 
         else: # train
 
