@@ -273,7 +273,7 @@ class MoCoEncoder(nn.Module):
 
 
 class MotionDreamer(nn.Module):
-    def __init__(self, motion_dim, hidden_dim=128, dropout=0.0, depth=1):
+    def __init__(self, motion_dim, hidden_dim=256, dropout=0.0, depth=1):
         super(MotionDreamer, self).__init__()
 
         self.fc = nn.Linear(hidden_dim, motion_dim)
@@ -290,8 +290,6 @@ class MotionDreamer(nn.Module):
 # python src/train.py  \
 #     --image_batch 4 \
 #     --video_batch 2 \
-#     --use_noise \
-#     --noise_sigma 0.1 \
 #     --image_discriminator PatchImageDiscriminator \
 #     --video_discriminator PatchVideoDiscriminator \
 #     --print_every 1 \

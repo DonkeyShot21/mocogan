@@ -136,12 +136,12 @@ class Trainer(object):
     def train_adversarial(self, generator,
                           image_discriminator, video_discriminator,
                           content_encoder, motion_encoder, 
-                          opt_generator, opt_image_discriminator, opt_video_discriminator):
+                          opt_image_discriminator, opt_video_discriminator, opt_generator):
 
 
-        ########################################################
-        # train encoder, generator and discriminator on images #
-        ########################################################
+        #################################
+        # train discriminator on images #
+        #################################
 
         # reset grads on image discriminator and generator
         opt_image_discriminator.zero_grad()
@@ -173,9 +173,9 @@ class Trainer(object):
         opt_image_discriminator.step()
 
 
-        ####################################
-        # training discriminator on videos #
-        ####################################
+        ##################################################
+        # training discriminator and generator on videos #
+        ##################################################
         
         # reset grads on video discriminator
         opt_video_discriminator.zero_grad()
@@ -217,7 +217,7 @@ class Trainer(object):
                                 self.gan_criterion(generated_video_labels, zeros_video)
 
         # update video discriminator
-        l_video_discriminator.backward()
+        (l_video_discriminator * 1/100).backward()
         opt_video_discriminator.step()
 
         # reset gradients on generator
@@ -233,18 +233,18 @@ class Trainer(object):
         
         # compute generator loss
         # TODO: try reduction 'sum'
-        l_generator = self.gan_criterion(generated_image_labels, ones_image) + \
-                      self.gan_criterion(generated_video_labels, ones_video)
-        l_reconstruction = 0.5 * F.l1_loss(generated_video_batch, real_video_batch[:,:,1:,:]) + \
-                           0.5 * F.l1_loss(generated_image_batch, real_image_batch) + \
-                           0.2 * F.l1_loss(predicted_latent_motion, latent_motion_gt)
-        l_generator += l_reconstruction
+        l_adversarial = self.gan_criterion(generated_image_labels, ones_image) + \
+                        self.gan_criterion(generated_video_labels, ones_video)
+        l_reconstruction = F.l1_loss(generated_video_batch, real_video_batch[:,:,1:,:]) + \
+                           F.l1_loss(generated_image_batch, real_image_batch) + \
+                           0.5*F.l1_loss(predicted_latent_motion, latent_motion_gt)
+        l_tot_gen = l_adversarial + 50*l_reconstruction
         
         # update generator
-        l_generator.backward()
+        l_tot_gen.backward()
         opt_generator.step()
 
-        return l_image_discriminator, l_video_discriminator, l_generator, l_reconstruction
+        return l_image_discriminator, l_video_discriminator, l_adversarial, l_reconstruction
 
     def train(self, generator, image_discriminator, video_discriminator, content_encoder, motion_encoder):
         if self.use_cuda:
@@ -263,7 +263,7 @@ class Trainer(object):
         # training loop
 
         def init_logs():
-            return {'l_gen': 0, 'l_image_dis': 0, 'l_video_dis': 0, 'l_recon':0}
+            return {'l_adv': 0, 'l_image_dis': 0, 'l_video_dis': 0, 'l_recon':0}
 
         batch_num = 0
 
@@ -282,11 +282,11 @@ class Trainer(object):
 
             opt_video_discriminator.zero_grad()
 
-            l_image, l_video, l_gen, l_recon = self.train_adversarial(generator, image_discriminator, video_discriminator, 
+            l_image, l_video, l_adv, l_recon = self.train_adversarial(generator, image_discriminator, video_discriminator, 
                                                                       content_encoder, motion_encoder,
                                                                       opt_image_discriminator, opt_video_discriminator, opt_generator)
 
-            logs['l_gen'] += l_gen.item()
+            logs['l_adv'] += l_adv.item()
             logs['l_image_dis'] += l_image.item()
             logs['l_video_dis'] += l_video.item()
             logs['l_recon'] += l_recon.item()
